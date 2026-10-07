@@ -1,0 +1,54 @@
+### Hello world
+GET http://localhost:8080/
+
+### Health check
+GET http://localhost:8080/health
+
+### List all tasks
+GET http://localhost:8080/tasks
+
+### List only finished tasks
+GET http://localhost:8080/tasks?done=true
+
+### Get a single task
+GET http://localhost:8080/tasks/1
+
+### Create a task
+POST http://localhost:8080/tasks
+Content-Type: application/json
+
+{
+  "title": "Try Gin"
+}
+
+### Create a task with an invalid title (400)
+POST http://localhost:8080/tasks
+Content-Type: application/json
+
+{
+  "title": ""
+}
+
+### Mark a task as done
+PATCH http://localhost:8080/tasks/1
+Content-Type: application/json
+
+{
+  "done": true
+}
+
+### Delete a task
+DELETE http://localhost:8080/tasks/1
+
+### Unknown task (404)
+GET http://localhost:8080/tasks/999
+
+### Non-numeric id (400)
+GET http://localhost:8080/tasks/abc
+
+### Live: stream all task events as Server-Sent Events (keep it open, then create/delete tasks)
+GET http://localhost:8080/tasks/events
+Accept: text/event-stream
+
+### Live: WebSocket – GoLand/IntelliJ opens an interactive console; type a title to create a task
+WEBSOCKET ws://localhost:8080/ws/tasks

@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gin Live Tasks</title>
+  <style>
+    :root { --bg: #f7f7f8; --card: #fff; --text: #1d1d1f; --muted: #6e6e73; --accent: #00add8; --line: #e5e5ea; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #111113; --card: #1c1c1f; --text: #f2f2f2; --muted: #9a9aa0; --line: #2c2c30; }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 16px/1.5 system-ui, sans-serif; background: var(--bg); color: var(--text); }
+    main { max-width: 960px; margin: 0 auto; padding: 32px 16px; display: grid; gap: 16px; grid-template-columns: 1fr 1fr; }
+    header { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; }
+    h1 { font-size: 24px; margin: 0; }
+    h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 0 0 12px; }
+    .status { font-size: 13px; padding: 2px 10px; border-radius: 99px; background: var(--line); }
+    .status.on { background: #2ea04326; color: #2ea043; }
+    section { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+    form { display: flex; gap: 8px; margin-bottom: 12px; }
+    input[type=text] { flex: 1; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: inherit; font: inherit; }
+    button { padding: 8px 14px; border: 0; border-radius: 8px; background: var(--accent); color: #fff; font: inherit; cursor: pointer; }
+    button.ghost { background: transparent; color: var(--muted); padding: 4px 8px; }
+    ul { list-style: none; margin: 0; padding: 0; }
+    li { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); }
+    li .title { flex: 1; }
+    li.done .title { text-decoration: line-through; color: var(--muted); }
+    #log { font: 13px/1.6 ui-monospace, monospace; max-height: 420px; overflow: auto; }
+    #log div { padding: 4px 0; border-top: 1px solid var(--line); word-break: break-all; }
+    #log b { color: var(--accent); }
+    @media (max-width: 700px) { main { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Gin Live Tasks</h1>
+    <span id="status" class="status">connecting…</span>
+  </header>
+
+  <section>
+    <h2>Tasks</h2>
+    <form id="form">
+      <input id="title" type="text" placeholder="New task (sent via WebSocket)" autocomplete="off">
+      <button>Add</button>
+    </form>
+    <ul id="tasks"></ul>
+  </section>
+
+  <section>
+    <h2>Events (WebSocket)</h2>
+    <div id="log"></div>
+  </section>
+</main>
+
+<script>
+  const tasks = new Map();
+  const $ = (id) => document.getElementById(id);
+
+  function render() {
+    $("tasks").innerHTML = "";
+    [...tasks.values()].sort((a, b) => a.id - b.id).forEach((task) => {
+      const li = document.createElement("li");
+      li.className = task.done ? "done" : "";
+      li.innerHTML = `<input type="checkbox" ${task.done ? "checked" : ""}><span class="title"></span><button class="ghost">✕</button>`;
+      li.querySelector(".title").textContent = `#${task.id} ${task.title}`;
+      // PATCH and DELETE go through the REST API – the change comes back as a WebSocket event.
+      li.querySelector("input").onchange = (e) => fetch(`/tasks/${task.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ done: e.target.checked }),
+      });
+      li.querySelector("button").onclick = () => fetch(`/tasks/${task.id}`, { method: "DELETE" });
+      $("tasks").appendChild(li);
+    });
+  }
+
+  function log(event) {
+    const line = document.createElement("div");
+    line.innerHTML = `<b></b> `;
+    line.querySelector("b").textContent = event.type;
+    line.append(JSON.stringify(event.task ?? { id: event.id }));
+    $("log").prepend(line);
+  }
+
+  // 1. Load the current state via REST.
+  fetch("/tasks").then((r) => r.json()).then((list) => {
+    list.forEach((t) => tasks.set(t.id, t));
+    render();
+  });
+
+  // 2. Keep it up to date via WebSocket.
+  function connect() {
+    const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/tasks`);
+    ws.onopen = () => { $("status").textContent = "live"; $("status").className = "status on"; };
+    ws.onclose = () => { $("status").textContent = "reconnecting…"; $("status").className = "status"; setTimeout(connect, 1000); };
+    ws.onmessage = (msg) => {
+      const event = JSON.parse(msg.data);
+      if (event.type === "deleted") tasks.delete(event.id); else tasks.set(event.task.id, event.task);
+      render();
+      log(event);
+    };
+
+    // 3. Creating a task sends a plain text frame over the same socket.
+    $("form").onsubmit = (e) => {
+      e.preventDefault();
+      const title = $("title").value.trim();
+      if (title && ws.readyState === WebSocket.OPEN) ws.send(title);
+      $("title").value = "";
+    };
+  }
+  connect();
+</script>
+</body>
+</html>
